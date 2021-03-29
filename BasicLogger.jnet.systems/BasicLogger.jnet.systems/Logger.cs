@@ -51,6 +51,8 @@ namespace BasicLogger.jnet.systems
 
         public static bool Load(string _logSettingLocation = "")
         {
+            DumpLogs();
+
             if (_logSettingLocation == string.Empty)
             {
                 _logSettingLocation = LogSettingLocation;
@@ -68,7 +70,6 @@ namespace BasicLogger.jnet.systems
             }
 
             EmailBufferThread();
-            DumpLogs();
             return true;
         }
 
@@ -188,11 +189,11 @@ namespace BasicLogger.jnet.systems
                     await Task.Delay(1000);
                     lock (ErrorCache)
                     {
-                        ErrorCache.ForEach(error =>
+                        foreach (var error in ErrorCache)
                         {
                             var errorMessage = $@"{error.DateTime} - LogLevel: {error.LogLevel.ToString()}, {error.Message} {Environment.NewLine}";
                             File.AppendAllText(LogFileLocation + "\\Log.txt", errorMessage);
-                        });
+                        }
 
                         ErrorCache.Clear();
                     }
