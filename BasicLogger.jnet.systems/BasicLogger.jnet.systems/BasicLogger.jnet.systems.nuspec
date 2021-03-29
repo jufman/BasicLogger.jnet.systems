@@ -2,14 +2,14 @@
 <package >
   <metadata>
     <id>BasicLogger.jnet.systems</id>
-    <version>1.0.2</version>
+    <version>1.0.3</version>
     <title>Jnet Systems Basic Logger</title>
     <authors>Justin Campbell</authors>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <license type="expression">MIT</license>
     <projectUrl>https://github.com/jufman/BasicLogger.jnet.systems</projectUrl>
     <description>Basic Logger for loggin to file and email</description>
-    <releaseNotes>Summary of changes made in this release of the package.</releaseNotes>
+    <releaseNotes>Added log cache so we don't collide.</releaseNotes>
     <copyright>Copyright ©  2020</copyright>
     <tags>Jnet.Syetms</tags>
   </metadata>

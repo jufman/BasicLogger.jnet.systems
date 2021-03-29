@@ -13,6 +13,8 @@ namespace BasicLogger.jnet.systems
 {
     public class Logger
     {
+        private static List<Error> EmailErrorCache = new List<Error>();
+
         private static List<Error> ErrorCache = new List<Error>();
 
         private static Objects.Settings _settings;
@@ -66,6 +68,7 @@ namespace BasicLogger.jnet.systems
             }
 
             EmailBufferThread();
+            DumpLogs();
             return true;
         }
 
@@ -77,7 +80,7 @@ namespace BasicLogger.jnet.systems
                 {
                     await Task.Delay(_settings.EmailInterval * 1000);
 
-                    if (ErrorCache.Count == 0)
+                    if (EmailErrorCache.Count == 0)
                     {
                         continue;
                     }
@@ -95,7 +98,7 @@ namespace BasicLogger.jnet.systems
 
                     var appName = AppDomain.CurrentDomain.FriendlyName;
 
-                    var body = $"{ErrorCache.Count} Errors have been report from {appName}.<br /><br />";
+                    var body = $"{EmailErrorCache.Count} Errors have been report from {appName}.<br /><br />";
                     body += @"<style>table {
                       font-family: arial, sans-serif;
                       border-collapse: collapse;
@@ -109,7 +112,7 @@ namespace BasicLogger.jnet.systems
                     }
                     </style>";
 
-                    lock (ErrorCache)
+                    lock (EmailErrorCache)
                     {
                         body += @"<table>";
                         body += "<tr>";
@@ -117,7 +120,7 @@ namespace BasicLogger.jnet.systems
                         body += "<th style=\"width: 150px;\">Log Level</th>";
                         body += "<th>Message</th>";
                         body += "</tr>";
-                        ErrorCache.ForEach(error =>
+                        EmailErrorCache.ForEach(error =>
                         {
                             var backgroundColorString = "#66bb6a";
                             var colorString = "#212121";
@@ -170,6 +173,27 @@ namespace BasicLogger.jnet.systems
                             LogEvent($"Logger Couldn't send Email: {e.ToString()}", LogLevel.System);
                         }
 
+                        EmailErrorCache.Clear();
+                    }
+                }
+            });
+        }
+
+        private static void DumpLogs()
+        {
+            Task.Run(async () =>
+            {
+                while (running)
+                {
+                    await Task.Delay(1000);
+                    lock (ErrorCache)
+                    {
+                        ErrorCache.ForEach(error =>
+                        {
+                            var errorMessage = $@"{error.DateTime} - LogLevel: {error.LogLevel.ToString()}, {error.Message} {Environment.NewLine}";
+                            File.AppendAllText(LogFileLocation + "\\Log.txt", errorMessage);
+                        });
+
                         ErrorCache.Clear();
                     }
                 }
@@ -179,17 +203,22 @@ namespace BasicLogger.jnet.systems
         public static void LogEvent(string Message, LogLevel LogLevel)
         {
             var dateTime = DateTime.Now;
-            var errorMessage = $@"{dateTime} - LogLevel: {LogLevel.ToString()}, {Message} {Environment.NewLine}";
-            File.AppendAllText(LogFileLocation + "\\Log.txt", errorMessage);
+            var error = new Error
+            {
+                DateTime = dateTime,
+                LogLevel = LogLevel,
+                Message = Message
+            };
+
+            lock (ErrorCache)
+            {
+                ErrorCache.Add(error);
+            }
+
 
             if (_settings != null && _settings.SendEmailAlerts && (int)LogLevel >= _settings.EmailAlertLogLevel)
             {
-                ErrorCache.Add(new Error
-                {
-                    DateTime = dateTime,
-                    LogLevel = LogLevel,
-                    Message = Message
-                });
+                EmailErrorCache.Add(error);
             }
         }
 
