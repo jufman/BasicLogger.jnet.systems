@@ -23,5 +23,8 @@ namespace BasicLogger.jnet.systems.Objects
         public bool EnableSsl { get; set; } = true;
 
         public string Subject { get; set; } = $"Error Log From {AppDomain.CurrentDomain.FriendlyName}";
+
+        public string LogFolderLocation { get; set; }
+        public string AppName { get; set; }
     }
 }

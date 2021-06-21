@@ -24,13 +24,19 @@ namespace BasicLogger.jnet.systems
         {
             get
             {
-                var logLocation = AppDomain.CurrentDomain.BaseDirectory + "\\Logs\\";
+                var BaseFolder = AppDomain.CurrentDomain.BaseDirectory;
+                if (_settings != null && _settings.LogFolderLocation != string.Empty)
+                {
+                    BaseFolder = _settings.LogFolderLocation;
+                }
+
+                var logLocation = Path.Combine(BaseFolder, "Logs\\");
                 if (Directory.Exists(logLocation) == false)
                 {
                     Directory.CreateDirectory(logLocation);
                 }
 
-                var todayLogLocation = AppDomain.CurrentDomain.BaseDirectory + "\\Logs\\" + DateTime.Now.ToString("MM-dd-yyyy");
+                var todayLogLocation = Path.Combine(BaseFolder, "Logs", DateTime.Now.ToString("dd-MM-yyyy"));
                 if (Directory.Exists(todayLogLocation) == false)
                 {
                     Directory.CreateDirectory(todayLogLocation);
@@ -43,7 +49,7 @@ namespace BasicLogger.jnet.systems
         {
             get
             {
-                var settingsLocation = AppDomain.CurrentDomain.BaseDirectory + "\\LogSettings.json";
+                var settingsLocation = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "LogSettings.json");
 
                 return !File.Exists(settingsLocation) ? string.Empty : settingsLocation;
             }
@@ -51,13 +57,17 @@ namespace BasicLogger.jnet.systems
 
         public static bool Load(string _logSettingLocation = "")
         {
-            DumpLogs();
+            LogEvent($"=============================================Logger started at: {DateTime.Now}============================================= ", LogLevel.System);
 
             if (_logSettingLocation == string.Empty)
             {
                 _logSettingLocation = LogSettingLocation;
             }
-            LogEvent($"=============================================Logger started at: {DateTime.Now}============================================= ", LogLevel.System);
+
+            if (File.Exists(_logSettingLocation) == false)
+            {
+                LogEvent($"Settings file not found!", LogLevel.System);
+            }
 
             try
             {
@@ -65,12 +75,23 @@ namespace BasicLogger.jnet.systems
             }
             catch (Exception e)
             {
-                LogEvent($"Logger Couldn't Load settings: {e.ToString()}", LogLevel.System);
+                LogEvent($"Error Loading settings: {e.ToString()}", LogLevel.System);
+                HandleDumpLogs();
                 return false;
             }
 
+
+            DumpLogs();
             EmailBufferThread();
             return true;
+        }
+
+        public static void Unload()
+        {
+            LogEvent($"=============================================Logger Ended at: {DateTime.Now}============================================= ", LogLevel.System);
+            running = false;
+            HandleEmailBuffer();
+            HandleDumpLogs();
         }
 
         private static void EmailBufferThread()
@@ -80,27 +101,38 @@ namespace BasicLogger.jnet.systems
                 while (running)
                 {
                     await Task.Delay(_settings.EmailInterval * 1000);
+                    
+                    HandleEmailBuffer();
+                }
+            });
+        }
 
-                    if (EmailErrorCache.Count == 0)
-                    {
-                        continue;
-                    }
+        private static void HandleEmailBuffer()
+        {
+            if (EmailErrorCache.Count == 0)
+            {
+                return;
+            }
 
-                    var smtpClient = new SmtpClient(_settings.EmailServerAddress)
-                    {
-                        Port = _settings.Port,
-                        EnableSsl = _settings.EnableSsl
-                    };
+            var smtpClient = new SmtpClient(_settings.EmailServerAddress)
+            {
+                Port = _settings.Port,
+                EnableSsl = _settings.EnableSsl
+            };
 
-                    if (_settings.RequiresAuth)
-                    {
-                        smtpClient.Credentials = new NetworkCredential(_settings.Username, _settings.Password);
-                    }
+            if (_settings.RequiresAuth)
+            {
+                smtpClient.Credentials = new NetworkCredential(_settings.Username, _settings.Password);
+            }
 
-                    var appName = AppDomain.CurrentDomain.FriendlyName;
+            var appName = AppDomain.CurrentDomain.FriendlyName;
+            if (_settings != null && _settings.AppName != string.Empty)
+            {
+                appName = _settings.AppName;
+            }
 
-                    var body = $"{EmailErrorCache.Count} Errors have been report from {appName}.<br /><br />";
-                    body += @"<style>table {
+            var body = $"{EmailErrorCache.Count} Errors have been report from {appName}.<br /><br />";
+            body += @"<style>table {
                       font-family: arial, sans-serif;
                       border-collapse: collapse;
                       width: 100%;
@@ -113,71 +145,69 @@ namespace BasicLogger.jnet.systems
                     }
                     </style>";
 
-                    lock (EmailErrorCache)
+            lock (EmailErrorCache)
+            {
+                body += @"<table>";
+                body += "<tr>";
+                body += "<th style=\"width: 50px;\">Date Time</th>";
+                body += "<th style=\"width: 150px;\">Log Level</th>";
+                body += "<th>Message</th>";
+                body += "</tr>";
+                EmailErrorCache.ForEach(error =>
+                {
+                    var backgroundColorString = "#66bb6a";
+                    var colorString = "#212121";
+                    switch (error.LogLevel)
                     {
-                        body += @"<table>";
-                        body += "<tr>";
-                        body += "<th style=\"width: 50px;\">Date Time</th>";
-                        body += "<th style=\"width: 150px;\">Log Level</th>";
-                        body += "<th>Message</th>";
-                        body += "</tr>";
-                        EmailErrorCache.ForEach(error =>
-                        {
-                            var backgroundColorString = "#66bb6a";
-                            var colorString = "#212121";
-                            switch (error.LogLevel)
-                            {
-                                case LogLevel.Error:
-                                    backgroundColorString = "#ff3d00";
-                                    colorString = "#FFFFFF";
-                                    break;
-                                case LogLevel.Critical:
-                                    backgroundColorString = "#d50000";
-                                    colorString = "#FFFFFF";
-                                    break;
-                                case LogLevel.System:
-                                    backgroundColorString = "#1976d2";
-                                    colorString = "#FFFFFF";
-                                    break;
-                            }
-
-                            body += $"<tr style=\"background-color: {backgroundColorString}; color: {colorString};\">";
-                            body += $"<td>{error.DateTime}</td>";
-                            body += $"<td>{error.LogLevel}</td>";
-                            body += $"<td>{error.Message}</td>";
-                            body += $"</tr>";
-                        });
-
-                        body += "</table>";
-
-                        body += $"<br /><br /><hr noshade>Log Generated at: {DateTime.Now}<br />";
-                        body += $"System Name: {Environment.MachineName}<br />";
-                        body +=
-                            $"Running Folder: {Path.Combine(AppDomain.CurrentDomain.BaseDirectory, AppDomain.CurrentDomain.FriendlyName)}<br />";
-
-                        var mailMessage = new MailMessage
-                        {
-                            From = new MailAddress(_settings.SenderAddress),
-                            Subject = _settings.Subject,
-                            Body = body,
-                            IsBodyHtml = true
-                        };
-
-                        _settings.EmailAddresses.ForEach(address => { mailMessage.To.Add(address); });
-
-                        try
-                        {
-                            smtpClient.Send(mailMessage);
-                        }
-                        catch (Exception e)
-                        {
-                            LogEvent($"Logger Couldn't send Email: {e.ToString()}", LogLevel.System);
-                        }
-
-                        EmailErrorCache.Clear();
+                        case LogLevel.Error:
+                            backgroundColorString = "#ff3d00";
+                            colorString = "#FFFFFF";
+                            break;
+                        case LogLevel.Critical:
+                            backgroundColorString = "#d50000";
+                            colorString = "#FFFFFF";
+                            break;
+                        case LogLevel.System:
+                            backgroundColorString = "#1976d2";
+                            colorString = "#FFFFFF";
+                            break;
                     }
+
+                    body += $"<tr style=\"background-color: {backgroundColorString}; color: {colorString};\">";
+                    body += $"<td>{error.DateTime}</td>";
+                    body += $"<td>{error.LogLevel}</td>";
+                    body += $"<td>{error.Message}</td>";
+                    body += $"</tr>";
+                });
+
+                body += "</table>";
+
+                body += $"<br /><br /><hr noshade>Log Generated at: {DateTime.Now}<br />";
+                body += $"System Name: {Environment.MachineName}<br />";
+                body +=
+                    $"Running Folder: {Path.Combine(AppDomain.CurrentDomain.BaseDirectory, AppDomain.CurrentDomain.FriendlyName)}<br />";
+
+                var mailMessage = new MailMessage
+                {
+                    From = new MailAddress(_settings.SenderAddress),
+                    Subject = _settings.Subject,
+                    Body = body,
+                    IsBodyHtml = true
+                };
+
+                _settings.EmailAddresses.ForEach(address => { mailMessage.To.Add(address); });
+
+                try
+                {
+                    smtpClient.Send(mailMessage);
                 }
-            });
+                catch (Exception e)
+                {
+                    LogEvent($"Logger Couldn't send Email: {e.ToString()}", LogLevel.System);
+                }
+
+                EmailErrorCache.Clear();
+            }
         }
 
         private static void DumpLogs()
@@ -187,18 +217,24 @@ namespace BasicLogger.jnet.systems
                 while (running)
                 {
                     await Task.Delay(1000);
-                    lock (ErrorCache)
-                    {
-                        foreach (var error in ErrorCache)
-                        {
-                            var errorMessage = $@"{error.DateTime} - LogLevel: {error.LogLevel.ToString()}, {error.Message} {Environment.NewLine}";
-                            File.AppendAllText(LogFileLocation + "\\Log.txt", errorMessage);
-                        }
-
-                        ErrorCache.Clear();
-                    }
+                    HandleDumpLogs();
                 }
             });
+        }
+
+        private static void HandleDumpLogs()
+        {
+            lock (ErrorCache)
+            {
+                foreach (var error in ErrorCache)
+                {
+                    var errorMessage =
+                        $@"{error.DateTime} - LogLevel: {error.LogLevel.ToString()}, {error.Message} {Environment.NewLine}";
+                    File.AppendAllText(LogFileLocation + "\\Log.txt", errorMessage);
+                }
+
+                ErrorCache.Clear();
+            }
         }
 
         public static void LogEvent(string Message, LogLevel LogLevel)
@@ -215,7 +251,6 @@ namespace BasicLogger.jnet.systems
             {
                 ErrorCache.Add(error);
             }
-
 
             if (_settings != null && _settings.SendEmailAlerts && (int)LogLevel >= _settings.EmailAlertLogLevel)
             {
