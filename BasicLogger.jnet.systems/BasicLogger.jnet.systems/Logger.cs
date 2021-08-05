@@ -6,6 +6,7 @@ using System.Net.Mail;
 using System.Net.Mime;
 using System.Reflection;
 using System.Threading.Tasks;
+using BasicLogger.jnet.systems.Interfaces;
 using BasicLogger.jnet.systems.Objects;
 using Newtonsoft.Json;
 
@@ -13,12 +14,16 @@ namespace BasicLogger.jnet.systems
 {
     public class Logger
     {
-        private static List<Error> EmailErrorCache = new List<Error>();
+        private static List<Event> EmailErrorCache = new List<Event>();
 
-        private static List<Error> ErrorCache = new List<Error>();
+        private static List<Event> ErrorCache = new List<Event>();
 
         private static Objects.Settings _settings;
         private static bool running = true;
+
+        private static string PluginLocation = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Plugins");
+
+        private static List<ILoggerPlugin> ILoggerPlugins = new List<ILoggerPlugin>();
 
         private static string LogFileLocation
         {
@@ -80,10 +85,17 @@ namespace BasicLogger.jnet.systems
                 return false;
             }
 
+            LoadPlugins();
 
             DumpLogs();
             EmailBufferThread();
             return true;
+        }
+
+        private static void LoadPlugins()
+        {
+            ILoggerPlugins = PluginController.GetPluginClasses(PluginLocation);
+            ILoggerPlugins.ForEach(plugin => plugin.Load());
         }
 
         public static void Unload()
@@ -92,6 +104,7 @@ namespace BasicLogger.jnet.systems
             running = false;
             HandleEmailBuffer();
             HandleDumpLogs();
+            ILoggerPlugins.ForEach(plugin => plugin.Unload());
         }
 
         private static void EmailBufferThread()
@@ -240,7 +253,7 @@ namespace BasicLogger.jnet.systems
         public static void LogEvent(string Message, LogLevel LogLevel)
         {
             var dateTime = DateTime.Now;
-            var error = new Error
+            var _event = new Event
             {
                 DateTime = dateTime,
                 LogLevel = LogLevel,
@@ -249,13 +262,15 @@ namespace BasicLogger.jnet.systems
 
             lock (ErrorCache)
             {
-                ErrorCache.Add(error);
+                ErrorCache.Add(_event);
             }
 
             if (_settings != null && _settings.SendEmailAlerts && (int)LogLevel >= _settings.EmailAlertLogLevel)
             {
-                EmailErrorCache.Add(error);
+                EmailErrorCache.Add(_event);
             }
+
+            ILoggerPlugins.ForEach(plugin => plugin.LogEvent(_event));
         }
 
         public enum LogLevel

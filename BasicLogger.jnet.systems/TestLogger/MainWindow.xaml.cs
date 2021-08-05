@@ -24,7 +24,6 @@ namespace TestLogger
         public MainWindow()
         {
             InitializeComponent();
-            Logger.Load();
         }
 
         private void TestButton_Click(object sender, RoutedEventArgs e)
@@ -33,6 +32,11 @@ namespace TestLogger
             Logger.LogEvent("Test Log", Logger.LogLevel.Error);
             Logger.LogEvent("Test Log", Logger.LogLevel.Critical);
             Logger.LogEvent("Test Log", Logger.LogLevel.System);
+        }
+
+        private void MainWindow_OnLoaded(object sender, RoutedEventArgs e)
+        {
+            Logger.Load();
         }
     }
 }
